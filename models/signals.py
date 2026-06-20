@@ -1,37 +1,57 @@
-import pandas as pd
-import numpy as np
-
-
-def simple_signal(df: pd.DataFrame, fast: int = 10, slow: int = 30) -> pd.DataFrame:
+def adaptive_fused_signal(
+    df: pd.DataFrame,
+    window: int = 20,
+    fee: float = 0.0005
+) -> pd.DataFrame:
     """
-    Prosty sygnał trendowy: przecięcie średnich kroczących.
-    signal = 1  -> long
-    signal = 0  -> flat
+    Adaptacyjna fuzja sygnałów (E2):
+      - wagi MA i ATR zmieniają się w czasie
+      - wagi zależą od lokalnej skuteczności (rolling performance)
+      - fuzja = emergencja sygnału TIMDR
+
+    window = ile dni patrzymy wstecz, żeby ocenić skuteczność
     """
+
     out = df.copy()
-    out["ma_fast"] = out["Close"].rolling(fast).mean()
-    out["ma_slow"] = out["Close"].rolling(slow).mean()
-    out["signal_ma"] = (out["ma_fast"] > out["ma_slow"]).astype(int)
+
+    # 1. Oba sygnały
+    out = simple_signal(out)
+    out = atr_breakout_signal(out)
+
+    # 2. Zwroty
+    out["ret"] = out["Close"].pct_change()
+
+    # 3. Rolling performance MA
+    out["pos_ma"] = out["signal_ma"].shift(1).fillna(0)
+    out["ret_ma"] = out["pos_ma"] * out["ret"]
+    out["perf_ma"] = out["ret_ma"].rolling(window).mean()
+
+    # 4. Rolling performance ATR
+    out["pos_atr"] = out["signal_atr"].shift(1).fillna(0)
+    out["ret_atr"] = out["pos_atr"] * out["ret"]
+    out["perf_atr"] = out["ret_atr"].rolling(window).mean()
+
+    # 5. Normalizacja (softmax)
+    perf_ma = out["perf_ma"].fillna(0)
+    perf_atr = out["perf_atr"].fillna(0)
+
+    exp_ma = np.exp(perf_ma)
+    exp_atr = np.exp(perf_atr)
+    denom = exp_ma + exp_atr + 1e-9
+
+    out["w_ma"] = exp_ma / denom
+    out["w_atr"] = exp_atr / denom
+
+    # 6. Fuzja sygnałów
+    # ATR jest w [-1, 1], MA w [0, 1] → normalizujemy ATR
+    atr_norm = (out["signal_atr"] + 1) / 2
+
+    fused = out["w_ma"] * out["signal_ma"] + out["w_atr"] * atr_norm
+
+    # 7. Emergentny sygnał
+    out["signal_adaptive"] = np.where(
+        fused > 0.66, 1,
+        np.where(fused < 0.33, -1, 0)
+    )
+
     return out
-
-
-def atr_breakout_signal(df: pd.DataFrame, atr_period: int = 14, k: float = 2.0) -> pd.DataFrame:
-    """
-    Sygnał wybicia oparty na ATR:
-    signal_atr =  1 -> wybicie górą
-    signal_atr = -1 -> wybicie dołem
-    signal_atr =  0 -> brak sygnału
-    """
-    out = df.copy()
-
-    # True Range
-    out["H-L"] = out["High"] - out["Low"]
-    out["H-PC"] = (out["High"] - out["Close"].shift(1)).abs()
-    out["L-PC"] = (out["Low"] - out["Close"].shift(1)).abs()
-    out["TR"] = out[["H-L", "H-PC", "L-PC"]].max(axis=1)
-
-    # ATR
-    out["ATR"] = out["TR"].rolling(atr_period).mean()
-
-    # Poziomy wybicia
-    out["upper"] = out["Close"].shift(
