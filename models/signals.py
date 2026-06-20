@@ -1,6 +1,12 @@
 import pandas as pd
 
+
 def simple_signal(df: pd.DataFrame, fast: int = 10, slow: int = 30) -> pd.DataFrame:
+    """
+    Prosty sygnał trendowy: przecięcie średnich kroczących.
+    signal = 1  -> ma_fast > ma_slow (long)
+    signal = 0  -> inaczej (flat)
+    """
     out = df.copy()
     out["ma_fast"] = out["Close"].rolling(fast).mean()
     out["ma_slow"] = out["Close"].rolling(slow).mean()
@@ -8,7 +14,17 @@ def simple_signal(df: pd.DataFrame, fast: int = 10, slow: int = 30) -> pd.DataFr
     return out
 
 
-def atr_breakout_signal(df: pd.DataFrame, atr_period: int = 14, k: float = 2.0) -> pd.DataFrame:
+def atr_breakout_signal(
+    df: pd.DataFrame,
+    atr_period: int = 14,
+    k: float = 2.0
+) -> pd.DataFrame:
+    """
+    Sygnał wybicia oparty na ATR:
+    signal_atr =  1 -> wybicie górą (Close > upper)
+    signal_atr = -1 -> wybicie dołem (Close < lower)
+    signal_atr =  0 -> brak sygnału
+    """
     out = df.copy()
 
     # True Range
