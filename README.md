@@ -1,1 +1,1 @@
-# analizator-gie-dowy
+# analizator-giełdowy
