@@ -1,28 +1,25 @@
 import pandas as pd
+import numpy as np
 
 
 def simple_signal(df: pd.DataFrame, fast: int = 10, slow: int = 30) -> pd.DataFrame:
     """
     Prosty sygnał trendowy: przecięcie średnich kroczących.
-    signal = 1  -> ma_fast > ma_slow (long)
-    signal = 0  -> inaczej (flat)
+    signal = 1  -> long
+    signal = 0  -> flat
     """
     out = df.copy()
     out["ma_fast"] = out["Close"].rolling(fast).mean()
     out["ma_slow"] = out["Close"].rolling(slow).mean()
-    out["signal"] = (out["ma_fast"] > out["ma_slow"]).astype(int)
+    out["signal_ma"] = (out["ma_fast"] > out["ma_slow"]).astype(int)
     return out
 
 
-def atr_breakout_signal(
-    df: pd.DataFrame,
-    atr_period: int = 14,
-    k: float = 2.0
-) -> pd.DataFrame:
+def atr_breakout_signal(df: pd.DataFrame, atr_period: int = 14, k: float = 2.0) -> pd.DataFrame:
     """
     Sygnał wybicia oparty na ATR:
-    signal_atr =  1 -> wybicie górą (Close > upper)
-    signal_atr = -1 -> wybicie dołem (Close < lower)
+    signal_atr =  1 -> wybicie górą
+    signal_atr = -1 -> wybicie dołem
     signal_atr =  0 -> brak sygnału
     """
     out = df.copy()
@@ -37,12 +34,4 @@ def atr_breakout_signal(
     out["ATR"] = out["TR"].rolling(atr_period).mean()
 
     # Poziomy wybicia
-    out["upper"] = out["Close"].shift(1) + k * out["ATR"]
-    out["lower"] = out["Close"].shift(1) - k * out["ATR"]
-
-    # Sygnał
-    out["signal_atr"] = 0
-    out.loc[out["Close"] > out["upper"], "signal_atr"] = 1
-    out.loc[out["Close"] < out["lower"], "signal_atr"] = -1
-
-    return out
+    out["upper"] = out["Close"].shift(
