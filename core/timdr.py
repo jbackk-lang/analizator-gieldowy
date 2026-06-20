@@ -1,4 +1,25 @@
 # src/core/timdr.py
+# ------------------------------------------------------------
+#  KOT SCHRÖDINGERA W TIMDR
+#
+#  Strategia przed oceną (przed backtestem i TIMDR) istnieje
+#  w stanie superpozycji:
+#      - jest dobra i zła,
+#      - działa i nie działa,
+#      - ma rezonans i nie ma rezonansu.
+#
+#  To jest dokładnie kot Schrödingera:
+#      konfiguracja sygnału = funkcja falowa,
+#      modalności M = superpozycja stanów,
+#      pomiar = backtest + metryki,
+#      kolaps = E (emergencja obiektu).
+#
+#  TIMDR pełni rolę mechanizmu kolapsu:
+#      R_total > próg  → strategia staje się OBIEKTEM,
+#      R_total < próg  → strategia pozostaje SZUMEM.
+#
+#  Dopiero ocena TIMDR "otwiera pudełko".
+# ------------------------------------------------------------
 
 def timdr_evaluate(config):
     """
