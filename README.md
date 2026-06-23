@@ -1,3 +1,5 @@
+## Dokumentacja online
+https://jbackk-lang.github.io/
 # Analizator Giełdowy oparty na TIMDR/GIA
 
 > Adaptacyjny system oceny strategii inwestycyjnych z filtrem topologiczno-informacyjnym.
