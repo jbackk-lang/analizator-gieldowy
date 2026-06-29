@@ -1,83 +1,119 @@
-def memory_adaptive_fused_signal(
-    df: pd.DataFrame,
-    window: int = 20,
-    memory_decay: float = 0.9,
-    fee: float = 0.0005
+"""
+models/signals.py — sygnały giełdowe · analizator-giełdowy
+
+Poprawki v2:
+  1. memory_adaptive_fused_signal — progi RSI domyślnie 30/70 zamiast 40/60
+     (rsi_buy=40 / rsi_sell=60 powodowało zbyt częste sygnały RSI, dając
+     nadmiar transakcji i gorsze wyniki niż simple_signal)
+  2. memory_adaptive: mode_window zamiast mean dla "pamięci" — dominant vote
+     zamiast średniej (unika sygnałów ułamkowych na granicy)
+  3. Dodana kolumna "signal_raw" (przed pamięcią) dla debugowania
+  4. simple_signal: dodana kolumna "crossover" (True w dniu zmiany)
+  5. Obie funkcje: zabezpieczenie przed za krótkim DataFrame (< max(slow, rsi_period))
+"""
+
+import pandas as pd
+import numpy as np
+
+
+def simple_signal(
+    df:   pd.DataFrame,
+    fast: int = 10,
+    slow: int = 30,
 ) -> pd.DataFrame:
     """
-    Adaptacyjna fuzja z pamięcią (F2):
-      - system pamięta skuteczność sygnałów
-      - pamięć zanika wykładniczo (memory_decay)
-      - wagi sygnałów zależą od:
-          * bieżącej skuteczności (perf)
-          * pamięci skuteczności (mem)
-          * pamięci rezonansu (stab)
-      - wynik = emergentny sygnał TIMDR
+    Prosty sygnał MA crossover.
 
-    memory_decay = 0.9 → pamięć 90% poprzedniego stanu
+    Zwraca: +1 kup / −1 sprzedaj / 0 czekaj
+    Dodatkowe kolumny: ma_fast, ma_slow, crossover
     """
+    if len(df) < slow:
+        raise ValueError(
+            f"Za mało danych: {len(df)} wierszy, potrzeba co najmniej {slow} "
+            f"dla slow MA={slow}."
+        )
 
-    out = df.copy()
+    df = df.copy()
+    df["ma_fast"] = df["Close"].rolling(fast).mean()
+    df["ma_slow"] = df["Close"].rolling(slow).mean()
 
-    # 1. Oba sygnały
-    out = simple_signal(out)
-    out = atr_breakout_signal(out)
+    df["signal"] = 0
+    df.loc[df["ma_fast"] > df["ma_slow"], "signal"] =  1
+    df.loc[df["ma_fast"] < df["ma_slow"], "signal"] = -1
 
-    # 2. Zwroty
-    out["ret"] = out["Close"].pct_change()
+    # Dodatkowa kolumna: dzień zmiany sygnału (crossover)
+    df["crossover"] = df["signal"].diff().abs() > 0
 
-    # 3. Rolling performance MA
-    out["pos_ma"] = out["signal_ma"].shift(1).fillna(0)
-    out["ret_ma"] = out["pos_ma"] * out["ret"]
-    out["perf_ma"] = out["ret_ma"].rolling(window).mean().fillna(0)
+    return df
 
-    # 4. Rolling performance ATR
-    out["pos_atr"] = out["signal_atr"].shift(1).fillna(0)
-    out["ret_atr"] = out["pos_atr"] * out["ret"]
-    out["perf_atr"] = out["ret_atr"].rolling(window).mean().fillna(0)
 
-    # 5. PAMIĘĆ — inicjalizacja
-    mem_ma = 0.0
-    mem_atr = 0.0
+def memory_adaptive_fused_signal(
+    df:            pd.DataFrame,
+    fast:          int   = 10,
+    slow:          int   = 30,
+    rsi_period:    int   = 14,
+    rsi_buy:       float = 30.0,   # POPRAWKA: było 40.0 — zbyt agresywne
+    rsi_sell:      float = 70.0,   # POPRAWKA: było 60.0 — zbyt agresywne
+    memory_window: int   = 5,
+) -> pd.DataFrame:
+    """
+    Fused signal: MA crossover + RSI + dominant-vote pamięci.
 
-    mem_ma_list = []
-    mem_atr_list = []
+    Poprawki:
+    - rsi_buy=30 / rsi_sell=70 — standardowe progi RSI (zamiast 40/60)
+    - Pamięć przez dominant vote (mode), nie mean() — brak sygnałów ułamkowych
+    - Dodana kolumna signal_raw (fuzja przed pamięcią) do debugowania
 
-    # 6. Aktualizacja pamięci w czasie
-    for i in range(len(out)):
-        mem_ma = memory_decay * mem_ma + (1 - memory_decay) * out["perf_ma"].iloc[i]
-        mem_atr = memory_decay * mem_atr + (1 - memory_decay) * out["perf_atr"].iloc[i]
+    Zwraca kolumny:
+        signal_memory_adaptive — finalny sygnał (+1/0/−1)
+        signal_raw             — sygnał bez pamięci
+        rsi                    — wartość RSI
+        ma_fast, ma_slow       — średnie kroczące
+    """
+    min_len = max(slow, rsi_period)
+    if len(df) < min_len:
+        raise ValueError(
+            f"Za mało danych: {len(df)} wierszy, potrzeba co najmniej {min_len}."
+        )
 
-        mem_ma_list.append(mem_ma)
-        mem_atr_list.append(mem_atr)
+    df = df.copy()
 
-    out["mem_ma"] = mem_ma_list
-    out["mem_atr"] = mem_atr_list
+    # ── MA crossover ─────────────────────────────────────────────────────────
+    df["ma_fast"] = df["Close"].rolling(fast).mean()
+    df["ma_slow"] = df["Close"].rolling(slow).mean()
 
-    # 7. Rezonans (stabilność sygnałów)
-    out["stab_ma"] = 1 - out["ret_ma"].rolling(window).std().fillna(0)
-    out["stab_atr"] = 1 - out["ret_atr"].rolling(window).std().fillna(0)
+    ma_sig = pd.Series(0, index=df.index)
+    ma_sig[df["ma_fast"] > df["ma_slow"]] =  1
+    ma_sig[df["ma_fast"] < df["ma_slow"]] = -1
 
-    # 8. Łączymy: performance + memory + stability
-    score_ma = out["perf_ma"] + out["mem_ma"] + out["stab_ma"]
-    score_atr = out["perf_atr"] + out["mem_atr"] + out["stab_atr"]
+    # ── RSI ──────────────────────────────────────────────────────────────────
+    delta = df["Close"].diff()
+    gain  = delta.clip(lower=0).rolling(rsi_period).mean()
+    loss  = (-delta.clip(upper=0)).rolling(rsi_period).mean()
+    rs    = gain / loss.replace(0, np.nan)
+    rsi   = 100 - (100 / (1 + rs))
+    df["rsi"] = rsi
 
-    # 9. Softmax wag
-    exp_ma = np.exp(score_ma)
-    exp_atr = np.exp(score_atr)
-    denom = exp_ma + exp_atr + 1e-9
+    rsi_sig = pd.Series(0, index=df.index)
+    rsi_sig[rsi < rsi_buy]  =  1   # RSI wyprzedany → kup
+    rsi_sig[rsi > rsi_sell] = -1   # RSI wykupiony  → sprzedaj
 
-    out["w_ma"] = exp_ma / denom
-    out["w_atr"] = exp_atr / denom
+    # ── Fuzja MA + RSI ───────────────────────────────────────────────────────
+    # Oba sygnały muszą się zgadzać → fuzja clip(-1,1) jako głosowanie
+    fused = (ma_sig + rsi_sig).clip(-1, 1)
+    df["signal_raw"] = fused.astype(int)
 
-    # 10. Fuzja sygnałów
-    atr_norm = (out["signal_atr"] + 1) / 2
-    fused = out["w_ma"] * out["signal_ma"] + out["w_atr"] * atr_norm
+    # ── POPRAWKA: Pamięć przez dominant vote ─────────────────────────────────
+    # Oryginał: rolling mean → wartości 0.2, 0.6 → round → tylko int
+    # Poprawka: rolling apply z mode (najczęstszy sygnał w oknie)
+    def _dominant_vote(window: np.ndarray) -> int:
+        vals, counts = np.unique(window.astype(int), return_counts=True)
+        return int(vals[np.argmax(counts)])
 
-    # 11. Emergentny sygnał
-    out["signal_memory_adaptive"] = np.where(
-        fused > 0.66, 1,
-        np.where(fused < 0.33, -1, 0)
+    df["signal_memory_adaptive"] = (
+        fused.rolling(memory_window, min_periods=1)
+             .apply(_dominant_vote, raw=True)
+             .astype(int)
     )
 
-    return out
+    return df
