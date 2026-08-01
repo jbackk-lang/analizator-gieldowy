@@ -3,7 +3,7 @@ https://jbackk-lang.github.io/
 
 # Analizator Giełdowy oparty na TIMDR/GIA
 
-> Adaptacyjny system wyceny rynkowej i oceny strategii inwestycyjnych z filtrem topologiczno-informacyjnym oraz automatycznym silnikiem rekomendacji i zarządzania ryzykiem.
+> Adaptacyjny system wyceny rynkowej i oceny strategii inwestycyjnych z filtrem topologiczno-informacyjnym, automatycznym silnikiem rekomendacji oraz skanerem całych indeksów rynkowych (WIG20, S&P 500, Crypto).
 
 ---
 
@@ -14,15 +14,16 @@ Ten analizator daje Ci gotowe **decyzje handlowe tu i teraz**, odpowiadając na 
 
 Zamiast samej prostej analizy wskaźnikowej (RSI, MACD), system:
 - **Generuje jasną rekomendację:** `SILNE KUPUJ`, `KUPUJ`, `TRZYMAJ`, `SPRZEDAJ` lub `SILNE SPRZEDAJ`.
-- **Wyznacza dynamiczny poziom ryzyka:** Matematycznie wylicza `Stop Loss (SL)` oraz `Take Profit (TP)` w oparciu o aktualną zmienność rynkową (ATR).
-- **Zarządza wielkością pozycji (Position Sizing):** Pytasz o alokację? System określa, czy bezpiecznie jest wejść na 100% kapitału, 50%, czy całkowicie wstrzymać się od handlu (`0%`) z powodu szumu rynkowego.
-- **Ocenia strukturę kontekstu (TIMDR):** Bada spójność trendu, gęstość informacji i rezonans sygnałów, odrzucając fałszywe wybicia.
+- **Wyznacza dynamiczne poziomy ryzyka:** Matematycznie wylicza `Stop Loss (SL)` oraz `Take Profit (TP)` w oparciu o aktualną zmienność rynkową ($1.5 \times \text{ATR}$ / $2.0 \times \text{ATR}$).
+- **Zarządza wielkością pozycji (Position Sizing):** Określa, czy bezpiecznie jest wejść na 100% kapitału, 50%, czy całkowicie wstrzymać się od handlu (`0%`) z powodu wykrycia szumu rynkowego.
+- **Ocenia strukturę kontekstu (TIMDR):** Bada spójność trendu, gęstość informacji i rezonans sygnałów ($R_{total}$), odrzucając fałszywe wybicia.
+- **Skanuje całe indeksy:** Uruchamia automatyczny skaner całych giełd (np. GPW WIG20) i wypluwa ranking najlepiej rokujących walorów.
 
 ---
 
-## Podgląd wyniku w konsoli (CLI Output)
+## Podgląd wyników w konsoli
 
-Uruchomienie analizy dla wybranej spółki (np. `PKN.WA` - Orlen):
+### 1. Analiza pojedynczego waloru (`main.py`)
 
 ```text
 === ANALIZA: PKN.WA | 1y | 1d ===
