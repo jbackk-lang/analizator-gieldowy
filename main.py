@@ -1,18 +1,19 @@
-# src/main.py — FULL WYPAS
+# src/main.py — FULL WYPAS + REKOMENDACJE INWESTYCYJNE
 
-import sys
 import argparse
+import sys
+import numpy as np
 import pandas as pd
 from termcolor import colored
 
-from data.loader import load_ohlc
-from models.signals import memory_adaptive_fused_signal
-from models.backtest import backtest_signals, compute_metrics
 from core.timdr import timdr_evaluate
+from data.loader import load_ohlc
+from models.backtest import backtest_signals, compute_metrics
+from models.signals import memory_adaptive_fused_signal
 
 
 # ---------------------------------------------------------
-# Kolorowanie wyników TIMDR
+# Pomocnicze kalkulacje i kolorowanie
 # ---------------------------------------------------------
 
 def colorize_emergence(E: str) -> str:
@@ -21,6 +22,69 @@ def colorize_emergence(E: str) -> str:
     if "pół-obiekt" in E:
         return colored(E, "yellow")
     return colored(E, "red")
+
+
+def colorize_recommendation(rec: str) -> str:
+    if "KUP" in rec:
+        return colored(rec, "green", attrs=["bold"])
+    elif "SPRZEDAJ" in rec:
+        return colored(rec, "red", attrs=["bold"])
+    return colored(rec, "yellow", attrs=["bold"])
+
+
+def calculate_atr(df: pd.DataFrame, window: int = 14) -> float:
+    """Oblicza Ostatnią wartość ATR dla wyznaczenia dynamicznego SL/TP."""
+    high_low = df["High"] - df["Low"]
+    high_close = np.abs(df["High"] - df["Close"].shift())
+    low_close = np.abs(df["Low"] - df["Close"].shift())
+    ranges = pd.concat([high_low, high_close, low_close], axis=1)
+    true_range = np.max(ranges, axis=1)
+    atr = true_range.rolling(window).mean().iloc[-1]
+    return float(atr) if not np.isnan(atr) else (df["Close"].iloc[-1] * 0.02)
+
+
+def generate_recommendation(df: pd.DataFrame, signal_col: str = "signal_memory_adaptive"):
+    """
+    Tłumaczy OSTATNI sygnał z modelu na bezpośrednią rekomendację rynkową
+    oraz kalkuluje poziomy zarządzania ryzykiem (SL/TP).
+    """
+    last_row = df.iloc[-1]
+    last_signal = last_row[signal_col]
+    current_price = float(last_row["Close"])
+    
+    # Przeliczanie ATR do ustawienia SL i TP
+    atr = calculate_atr(df)
+    
+    # Interpretacja wartości sygnału (dostosuj progi, jeśli Twój model zwraca inne zakresem wartości!)
+    if last_signal >= 0.75:
+        action = "SILNE KUPUJ (STRONG BUY)"
+        sl = current_price - (1.5 * atr)
+        tp = current_price + (3.0 * atr)
+    elif 0.2 < last_signal < 0.75:
+        action = "KUPUJ (BUY)"
+        sl = current_price - (1.5 * atr)
+        tp = current_price + (2.5 * atr)
+    elif -0.2 <= last_signal <= 0.2:
+        action = "NEUTRALNIE / TRZYMAJ (HOLD)"
+        sl = current_price - (2.0 * atr)
+        tp = current_price + (2.0 * atr)
+    elif -0.75 < last_signal < -0.2:
+        action = "SPRZEDAJ (SELL)"
+        sl = current_price + (1.5 * atr)
+        tp = current_price - (2.5 * atr)
+    else:
+        action = "SILNE SPRZEDAJ (STRONG SELL)"
+        sl = current_price + (1.5 * atr)
+        tp = current_price - (3.0 * atr)
+
+    return {
+        "action": action,
+        "signal_value": round(float(last_signal), 4),
+        "price": round(current_price, 2),
+        "sl": round(sl, 2),
+        "tp": round(tp, 2),
+        "atr": round(atr, 2)
+    }
 
 
 # ---------------------------------------------------------
@@ -39,13 +103,16 @@ def analyze_single(ticker: str, period: str, interval: str, verbose: bool):
     # 2. Sygnał
     df = memory_adaptive_fused_signal(df)
 
-    # 3. Backtest
+    # 3. Wygenerowanie rekomendacji dla OSTATNIEGO punktu
+    rec = generate_recommendation(df, signal_col="signal_memory_adaptive")
+
+    # 4. Backtest
     bt = backtest_signals(df, signal_col="signal_memory_adaptive")
 
-    # 4. Metryki
+    # 5. Metryki
     metrics = compute_metrics(bt)
 
-    # 5. TIMDR
+    # 6. TIMDR
     config = {
         "T": f"{ticker} / {interval}",
         "I": df,
@@ -56,7 +123,15 @@ def analyze_single(ticker: str, period: str, interval: str, verbose: bool):
 
     result = timdr_evaluate(config)
 
-    # 6. Output
+    # 7. Output — SEKCJA REKOMENDACJI
+    print(colored(">>> REKOMENDACJA INWESTYCYJNA <<<", "yellow", attrs=["bold"]))
+    print("Decyzja:         ", colorize_recommendation(rec["action"]))
+    print("Sygnał modelu:   ", colored(f"{rec['signal_value']}", "white"))
+    print("Aktualna cena:   ", colored(f"{rec['price']}$", "white"))
+    print("Stop Loss (SL):  ", colored(f"{rec['sl']}$", "red"))
+    print("Take Profit (TP):", colored(f"{rec['tp']}$", "green"))
+    print(colored("---------------------------------", "yellow"))
+
     print(colored("=== TIMDR RESULT ===", "magenta"))
     print("R_total:", colored(f"{result['R_total']:.4f}", "white"))
     print("Emergencja:", colorize_emergence(result["E"]))
@@ -64,13 +139,18 @@ def analyze_single(ticker: str, period: str, interval: str, verbose: bool):
     print(colored("====================\n", "magenta"))
 
     if verbose:
-        print(colored("=== OSTATNIE SYGNAŁY ===", "blue"))
-        print(df.tail(10))
+        print(colored("=== OSTATNIE SYGNAŁY I REKOMENDACJE ===", "blue"))
+        print(df[["Close", "signal_memory_adaptive"]].tail(10))
 
     return {
         "ticker": ticker,
         "period": period,
         "interval": interval,
+        "rekomendacja": rec["action"],
+        "sygnal": rec["signal_value"],
+        "cena": rec["price"],
+        "stop_loss": rec["sl"],
+        "take_profit": rec["tp"],
         "R_total": result["R_total"],
         "E": result["E"],
         "details": result["details"]
@@ -97,7 +177,7 @@ def analyze_batch(tickers, period, interval, verbose):
 # ---------------------------------------------------------
 
 def build_cli():
-    parser = argparse.ArgumentParser(description="Analizator giełdowy + TIMDR (full wypas)")
+    parser = argparse.ArgumentParser(description="Analizator giełdowy + TIMDR (wersja z rekomendacjami)")
 
     parser.add_argument("ticker", nargs="*", help="Ticker lub tickery (np. AAPL BTC-USD TSLA)")
     parser.add_argument("--period", default="1y", help="Okres (np. 1y, 6mo, 5y)")
@@ -122,11 +202,15 @@ def main():
             print(colored("Zapisano: result.csv", "green"))
     else:
         df = analyze_batch(tickers, args.period, args.interval, args.verbose)
-        print(df)
+        
+        # Ładne wyświetlenie najważniejszych kolumn rekomendacji w konsoli dla wielu spółek
+        summary_cols = ["ticker", "rekomendacja", "cena", "stop_loss", "take_profit", "R_total"]
+        print(colored("\n=== PODSUMOWANIE BATCH ===", "cyan", attrs=["bold"]))
+        print(df[summary_cols].to_string(index=False))
 
         if args.save:
             df.to_csv("batch_results.csv", index=False)
-            print(colored("Zapisano: batch_results.csv", "green"))
+            print(colored("\nZapisano podsumowanie do: batch_results.csv", "green"))
 
 
 if __name__ == "__main__":
