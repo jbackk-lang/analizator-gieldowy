@@ -1,64 +1,27 @@
-## Dokumentacja online
-https://jbackk-lang.github.io/
+# 📈 Analizator Giełdowy TIMDR / GSF + Multi-Timeframe Engine
 
-# Analizator Giełdowy oparty na TIMDR/GIA
-
-> Adaptacyjny system wyceny rynkowej i oceny strategii inwestycyjnych z filtrem topologiczno-informacyjnym, automatycznym silnikiem rekomendacji oraz skanerem całych indeksów rynkowych (WIG20, S&P 500, Crypto).
+> Adaptacyjny system wyceny rynkowej i oceny strategii inwestycyjnych oparty na filitrze topologiczno-informacyjnym (TIMDR), globalnym skalarze kontekstu (GSF), analizie wolumenu (VWAP/OBV) oraz skanerze zintegrowanym z systemem alertowym.
 
 ---
 
-## Czym to jest (dla inwestora / tradera)
+## 💡 Czym jest ten system?
 
-Standardowy analizator lub backtest mówi Ci: **czy strategia zarabiała w przeszłości**.  
-Ten analizator daje Ci gotowe **decyzje handlowe tu i teraz**, odpowiadając na kluczowe pytanie: **czy obecny ruch rynkowy to trwały trend, czy tylko szum?**
+Standardowy analizator lub backtest sprawdza jedynie historyczne wyniki. Ten system daje **decyzje handlowe w czasie rzeczywistym**, odpowiadając na kluczowe pytanie: **czy obecny ruch rynkowy to trwały trend, czy tylko szum?**
 
-Zamiast samej prostej analizy wskaźnikowej (RSI, MACD), system:
-- **Generuje jasną rekomendację:** `SILNE KUPUJ`, `KUPUJ`, `TRZYMAJ`, `SPRZEDAJ` lub `SILNE SPRZEDAJ`.
-- **Wyznacza dynamiczne poziomy ryzyka:** Matematycznie wylicza `Stop Loss (SL)` oraz `Take Profit (TP)` w oparciu o aktualną zmienność rynkową ($1.5 \times \text{ATR}$ / $2.0 \times \text{ATR}$).
-- **Zarządza wielkością pozycji (Position Sizing):** Określa, czy bezpiecznie jest wejść na 100% kapitału, 50%, czy całkowicie wstrzymać się od handlu (`0%`) z powodu wykrycia szumu rynkowego.
-- **Ocenia strukturę kontekstu (TIMDR):** Bada spójność trendu, gęstość informacji i rezonans sygnałów ($R_{total}$), odrzucając fałszywe wybicia.
-- **Skanuje całe indeksy:** Uruchamia automatyczny skaner całych giełd (np. GPW WIG20) i wypluwa ranking najlepiej rokujących walorów.
+### Kluczowe Funkcjonalności:
+- **Silnik Multi-Timeframe (1D / 1W):** Bada spójność sygnałów na różnych interwałach. W przypadku wykrycia dywergencji (np. silny dzienny pęd przy słabym interwale tygodniowym) system automatycznie redukuje wielkość pozycji (Discord TF).
+- **Kontekst Makro & Sektorowy (GSF):** Uwzględnia globalne zmienne makroekonomiczne (VIX, US10Y, EUR/USD, ropa BRENT, miedź), korygując wycenę spółek z poszczególnych sektorów (Banki, Surowce, Technologia).
+- **Weryfikacja Wolumenu (VWAP & OBV):** Odrzuca fałszywe wybicia. Rezonans akumulacyjny jest potwierdzany tylko wtedy, gdy wskaźnik OBV rośnie powyżej swojej średniej SMA20, a kurs znajduje się w okolicy punktu równowagi cenowej (VWAP 20d).
+- **Zarządzanie Ryzykiem i Pozycją:** Wyznacza dynamiczne poziomy `Stop Loss (1.5x ATR)` oraz `Take Profit (2.5x–2.75x ATR)` dopasowane do aktualnej zmienności rynkowej.
+- **System Alertowy:** Wysyła natychmiastowe powiadomienia na **Discorda** oraz **Telegram**, gdy kurs spółki wejdzie w wyznaczoną strefę rezonansu (złotą strefę wejścia).
 
 ---
 
-## Podgląd wyników w konsoli
+## 🛠️ Instalacja i Wymagania
 
-### 1. Analiza pojedynczego waloru (`main.py`)
+Sklonuj repozytorium i zainstaluj wymagane pakiety:
 
-```text
-=== ANALIZA: PKN.WA | 1y | 1d ===
-
->>> REKOMENDACJA INWESTYCYJNA <<<
-Decyzja:           KUPUJ (BUY)
-Sugerowana Pozycja: 100%
-Sygnał Modelu:     0.6421
-Aktualna Cena:     67.45 PLN
-Stop Loss (SL):    64.15 PLN
-Take Profit (TP):  74.05 PLN
-Uwagi:             Sygnał potwierdzony przez stabilną emergencję TIMDR.
----------------------------------
-
-=== TIMDR RESULT ===
-R_total:    0.6184
-Ufność:     62%
-Emergencja: obiekt (strategia stabilna)
-Szczegóły:  {'sharpe_n': 0.6812, 'winrate_n': 0.5833, 'dd_n': 0.8120}
-====================
-Jak skonfigurować i uruchomić alerty?
-Discord Webhook:
-
-W ustawieniach kanału na Discordzie przejdź do Integracje -> Twórz Webhook.
-
-Skopiuj adres URL i wklej go do zmiennej DISCORD_WEBHOOK_URL.
-
-Telegram Bot:
-
-Stwórz bota przez @BotFather na Telegramie i pobierz token.
-
-Pobierz swój CHAT_ID (np. przez bota @userinfobot).
-
-Wklej dane do TELEGRAM_BOT_TOKEN oraz TELEGRAM_CHAT_ID.
-
-Automatyzacja (Harmonogram):
-
-Możesz uruchamiać skrypt cyklicznie podczas trwania sesji GPW (np. co 15-30 minut) za pomocą Cron (Linux/macOS) lub Windows Task Scheduler.
+```bash
+git clone [https://github.com/twoje-konto/analizator-timdr.git](https://github.com/twoje-konto/analizator-timdr.git)
+cd analizator-timdr
+pip install yfinance pandas numpy plotly matplotlib requests
