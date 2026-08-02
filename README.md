@@ -44,3 +44,21 @@ Ufność:     62%
 Emergencja: obiekt (strategia stabilna)
 Szczegóły:  {'sharpe_n': 0.6812, 'winrate_n': 0.5833, 'dd_n': 0.8120}
 ====================
+Jak skonfigurować i uruchomić alerty?
+Discord Webhook:
+
+W ustawieniach kanału na Discordzie przejdź do Integracje -> Twórz Webhook.
+
+Skopiuj adres URL i wklej go do zmiennej DISCORD_WEBHOOK_URL.
+
+Telegram Bot:
+
+Stwórz bota przez @BotFather na Telegramie i pobierz token.
+
+Pobierz swój CHAT_ID (np. przez bota @userinfobot).
+
+Wklej dane do TELEGRAM_BOT_TOKEN oraz TELEGRAM_CHAT_ID.
+
+Automatyzacja (Harmonogram):
+
+Możesz uruchamiać skrypt cyklicznie podczas trwania sesji GPW (np. co 15-30 minut) za pomocą Cron (Linux/macOS) lub Windows Task Scheduler.
