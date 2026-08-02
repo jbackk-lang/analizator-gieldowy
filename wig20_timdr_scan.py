@@ -1,7 +1,6 @@
-"""Skaner WIG20 - Hybrydowy Model TIMDR/GIA z Integracją Sektorową GSF (Global Financial System).
+"""Skaner WIG20 - Hybrydowy Model Multi-Timeframe TIMDR (1d + 1w) z Integracją Sektorową GSF.
 
-Wersja zintegrowana: Jedno-plikowe rozwiązanie z pełną analityką makro,
-rezonansu i zarządzania ryzykiem.
+Wersja zintegrowana z analityką wielo-interwałową i sektorową osłoną makro.
 """
 
 from typing import Any, Dict
@@ -68,7 +67,7 @@ WIG20 = [
 # ==============================================================================
 
 
-def fetch_gsf_macro_data(period: str = "6mo") -> pd.DataFrame:
+def fetch_gsf_macro_data(period: str = "1y") -> pd.DataFrame:
   """Pobiera dane rynkowe dla aktywów makroekonomicznych GSF."""
   try:
     data = yf.download(
@@ -160,29 +159,21 @@ def compute_sectoral_gsf_score(
 
 
 # ==============================================================================
-# 3. SILNIK ANALIZY LOKALNEJ TIMDR
+# 3. SILNIK EVALUACJI MULTI-TIMEFRAME TIMDR (1D + 1W)
 # ==============================================================================
 
 
-def timdr_gsf_analyze(
-    ticker: str, macro_df: pd.DataFrame, base_gsf: dict, period: str = "1y"
-) -> dict | None:
-  df = yf.download(
-      ticker, period=period, interval="1d", auto_adjust=True, progress=False
-  )
-
-  if df is None or len(df) < 50:
-    return None
+def calculate_single_tf_timdr(df: pd.DataFrame) -> float:
+  """Oblicza skalar TIMDR dla podanej ramki czasowej (df)."""
+  if df is None or len(df) < 20:
+    return 0.50
 
   close = df["Close"].squeeze()
-  high = df["High"].squeeze()
-  low = df["Low"].squeeze()
-
   ret = close.pct_change().dropna()
-  if ret.empty:
-    return None
 
-  # Metryki lokalne TIMDR
+  if ret.empty:
+    return 0.50
+
   sharpe = (ret.mean() / ret.std() * np.sqrt(252)) if ret.std() != 0 else 0
   sharpe_n = 1 / (1 + np.exp(-sharpe))
   winrate_n = (ret > 0).mean()
@@ -191,22 +182,49 @@ def timdr_gsf_analyze(
   dd = (close - cummax) / cummax
   dd_n = 1 + dd.min()
 
-  R_local = 0.4 * sharpe_n + 0.3 * winrate_n + 0.3 * max(0, dd_n)
+  R_score = 0.40 * sharpe_n + 0.30 * winrate_n + 0.30 * max(0, dd_n)
+  return float(R_score)
 
-  # Włączenie komponentu sektorowego GSF
+
+def timdr_multi_tf_gsf_analyze(
+    ticker: str, macro_df: pd.DataFrame, base_gsf: dict
+) -> dict | None:
+  # 1. Pobieranie ramek 1d oraz 1w
+  df_1d = yf.download(
+      ticker, period="1y", interval="1d", auto_adjust=True, progress=False
+  )
+  df_1w = yf.download(
+      ticker, period="2y", interval="1wk", auto_adjust=True, progress=False
+  )
+
+  if df_1d is None or len(df_1d) < 50 or df_1w is None or len(df_1w) < 15:
+    return None
+
+  # 2. Obliczanie pojedynczych skalarów TIMDR
+  R_1d = calculate_single_tf_timdr(df_1d)
+  R_1w = calculate_single_tf_timdr(df_1w)
+
+  # Wielo-ramowa fuzja (50% Dzienny + 50% Tygodniowy)
+  R_multi = 0.50 * R_1d + 0.50 * R_1w
+
+  # 3. Integracja z Sektorowym GSF
   sec_gsf = compute_sectoral_gsf_score(ticker, macro_df, base_gsf)
   R_GSF_sector = sec_gsf["R_GSF_sector"]
 
-  # Hybrydowy Skalar Rezonansu (70% Lokalny TIMDR + 30% Sektorowy GSF)
-  R_final = float(0.70 * R_local + 0.30 * R_GSF_sector)
+  # Hybrydowy Skalar Rezonansu (70% Multi-Timeframe + 30% Sektorowy GSF)
+  R_final = float(0.70 * R_multi + 0.30 * R_GSF_sector)
 
-  # Obliczanie ATR (14) dla wyznaczenia SL i TP
+  # 4. Obliczanie ATR (14) z ramki dziennej dla wyznaczenia SL / TP
+  close_1d = df_1d["Close"].squeeze()
+  high_1d = df_1d["High"].squeeze()
+  low_1d = df_1d["Low"].squeeze()
+
   tr = (
       pd.concat(
           [
-              high - low,
-              (high - close.shift()).abs(),
-              (low - close.shift()).abs(),
+              high_1d - low_1d,
+              (high_1d - close_1d.shift()).abs(),
+              (low_1d - close_1d.shift()).abs(),
           ],
           axis=1,
       )
@@ -220,10 +238,17 @@ def timdr_gsf_analyze(
     return None
 
   atr = float(tr.iloc[-1])
-  last_price = float(close.iloc[-1])
+  last_price = float(close_1d.iloc[-1])
 
-  # Silnik rekomendacyjny i kontroli ryzyka
-  if R_final > 0.75:
+  # 5. Sprawdzenie spójności trendów między interwałami (Alignment Check)
+  # Jeśli rozbieżność między 1d a 1w jest większa niż 0.20, zgłaszamy niespójność
+  tf_mismatch = abs(R_1d - R_1w) > 0.20
+
+  # Silnik decyzyjny
+  if tf_mismatch and R_final > 0.55:
+    dec = "TRZYMAJ (DISCORD TF)"
+    pos = "50%"
+  elif R_final > 0.75:
     dec = "SILNE KUPUJ"
     pos = "100%"
   elif R_final > 0.60:
@@ -243,9 +268,11 @@ def timdr_gsf_analyze(
       "ticker": ticker,
       "sektor": sec_gsf["sector"],
       "cena": round(last_price, 2),
-      "R_local": round(float(R_local), 4),
-      "R_GSF": round(float(R_GSF_sector), 4),
-      "R_final": round(float(R_final), 4),
+      "R_1d": round(R_1d, 4),
+      "R_1w": round(R_1w, 4),
+      "R_multi": round(R_multi, 4),
+      "R_GSF": round(R_GSF_sector, 4),
+      "R_final": round(R_final, 4),
       "decyzja": dec,
       "alokacja": pos,
       "SL": round(last_price - 1.5 * atr, 2),
@@ -259,43 +286,49 @@ def timdr_gsf_analyze(
 
 
 def main():
-  print("=" * 80)
-  print("   SKANER WIG20 (TIMDR / GIA + SEKTOROWY SILNIK GSF)")
-  print("=" * 80)
+  print("=" * 95)
+  print("   SKANER WIG20 (MULTI-TIMEFRAME 1D/1W TIMDR + SEKTOROWY GSF)")
+  print("=" * 95)
 
-  print("\n1. Pobieranie danych dla makro-pola GSF (VIX, US10Y, EUR/USD, Ropa, Miedź)...")
-  macro_df = fetch_gsf_macro_data(period="6mo")
+  print(
+      "\n1. Pobieranie danych dla makro-pola GSF (VIX, US10Y, EUR/USD, Ropa,"
+      " Miedź)..."
+  )
+  macro_df = fetch_gsf_macro_data(period="1y")
   base_gsf = compute_base_gsf_score(macro_df)
   print(f" ✓ Bazowy Skalar Pole GSF (R_GSF_base): {base_gsf.get('R_GSF_base')}")
 
-  print("\n2. Rozpoczynam skanowanie walorów indeksu WIG20...\n")
+  print(
+      "\n2. Rozpoczynam skanowanie wielo-interwałowe walorów indeksu"
+      " WIG20...\n"
+  )
   results = []
 
   for t in WIG20:
     try:
-      r = timdr_gsf_analyze(t, macro_df, base_gsf)
+      r = timdr_multi_tf_gsf_analyze(t, macro_df, base_gsf)
       if r:
         results.append(r)
         print(
-            f"  ✓ {t:<7} | Sektor: {r['sektor']:<16} | R_final: {r['R_final']} |"
-            f" {r['decyzja']} ({r['alokacja']})"
+            f"  ✓ {t:<7} | R_1d: {r['R_1d']} | R_1w: {r['R_1w']} | R_final:"
+            f" {r['R_final']} | {r['decyzja']} ({r['alokacja']})"
         )
       else:
-        print(f"  ⚠️ Pomiędzy: {t} (Niewystarczające dane)")
+        print(f"  ⚠️ Pominięcie: {t} (Niewystarczające dane)")
     except Exception as e:
       print(f"  ❌ Błąd przetwarzania dla {t}: {e}")
 
   if results:
     df_res = pd.DataFrame(results).sort_values("R_final", ascending=False)
 
-    print("\n" + "=" * 95)
-    print("=== PODSUMOWANIE SKANOWANIA WIG20 (TIMDR + GSF SEKTOROWY) ===")
-    print("=" * 95)
+    print("\n" + "=" * 105)
+    print("=== PODSUMOWANIE SKANOWANIA MULTI-TIMEFRAME WIG20 (1D/1W TIMDR + GSF) ===")
+    print("=" * 105)
     print(df_res.to_string(index=False))
 
     output_file = "wig20_gsf_timdr_scan.csv"
     df_res.to_csv(output_file, index=False)
-    print(f"\n Zapisano pełny raport w pliku: {output_file}")
+    print(f"\n Zapisano pełny raport wielo-interwałowy w pliku: {output_file}")
   else:
     print("\n❌ Brak wyników do wyświetlenia.")
 
