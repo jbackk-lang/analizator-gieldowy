@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<title>Analizator Giełdowy + TIMDR — Dashboard</title>
+<style>
+  :root{
+    --bg: #0e1420; --panel: #161e2d; --panel-border: #253248;
+    --text: #e6edf5; --muted: #8393ab;
+    --ok: #35d488; --warn: #f5a623; --crit: #ef4b5f; --accent: #4f9dff;
+    --mono: "Consolas","SFMono-Regular",Menlo,monospace;
+  }
+  *{box-sizing:border-box;}
+  body{ margin:0; background:var(--bg); color:var(--text); font-family:"Segoe UI",Arial,sans-serif; padding:20px 28px 40px; }
+  header{ display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; flex-wrap:wrap; gap:10px; }
+  header h1{ font-size:20px; margin:0; font-weight:600; }
+  header .sub{ color:var(--muted); font-size:12px; font-family:var(--mono); }
+  .status-pill{ padding:5px 14px; border-radius:20px; font-size:12px; font-weight:700; letter-spacing:.5px; text-transform:uppercase; }
+  .status-buy{ background:rgba(53,212,136,.15); color:var(--ok); border:1px solid var(--ok); }
+  .status-hold{ background:rgba(245,166,35,.15); color:var(--warn); border:1px solid var(--warn); }
+  .status-sell{ background:rgba(239,75,95,.15); color:var(--crit); border:1px solid var(--crit); }
+
+  .controls{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; background:var(--panel); border:1px solid var(--panel-border); border-radius:10px; padding:12px 16px; margin-bottom:14px; }
+  .controls label{ font-size:12px; color:var(--muted); margin-right:4px; }
+  .controls input[type=text]{ background:#0c121d; border:1px solid var(--panel-border); color:var(--text); border-radius:6px; padding:6px 10px; width:110px; font-family:var(--mono); font-size:13px; text-transform:uppercase; }
+  .controls select{ background:#0c121d; border:1px solid var(--panel-border); color:var(--text); border-radius:6px; padding:6px 8px; font-size:12px; }
+  .controls select#inTickerList{ max-width:220px; }
+  .controls button{ background:var(--accent); color:#04101f; border:none; border-radius:6px; padding:8px 16px; font-weight:700; font-size:12px; cursor:pointer; }
+  .controls button.secondary{ background:#233149; color:var(--text); }
+  .controls button:hover{ filter:brightness(1.1); }
+  #err{ color:var(--crit); font-size:12px; font-family:var(--mono); margin-left:auto; white-space:pre-wrap; max-width:420px; }
+  .note{ font-size:12px; color:var(--muted); margin:2px 0 16px 2px; font-style:italic; }
+
+  .cards{ display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:14px; margin-bottom:18px; }
+  .card{ background:var(--panel); border:1px solid var(--panel-border); border-radius:10px; padding:16px 18px; }
+  .card .label{ font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.6px; }
+  .card .value{ font-size:24px; font-weight:700; margin-top:6px; font-family:var(--mono); }
+  .card .unit{ font-size:13px; color:var(--muted); margin-left:4px; font-weight:400; }
+
+  .grid2{ display:grid; grid-template-columns:2fr 1fr; gap:14px; margin-bottom:14px; }
+  .panel{ background:var(--panel); border:1px solid var(--panel-border); border-radius:10px; padding:16px 18px; }
+  .panel h2{ font-size:13px; margin:0 0 10px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; font-weight:600; }
+  .legend{ font-size:10px; color:var(--muted); margin-bottom:6px; }
+  .legend span{ margin-right:12px; }
+  .legend .dot{ display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:4px; }
+  .timdr-row{ display:flex; justify-content:space-between; font-size:13px; padding:5px 0; border-bottom:1px solid var(--panel-border); }
+  .timdr-row:last-child{ border-bottom:none; }
+  .warn-box{ font-size:11px; color:var(--warn); margin-top:8px; }
+  canvas{ max-width:100%; display:block; }
+  footer{ margin-top:20px; color:var(--muted); font-size:11px; font-family:var(--mono); }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>📈 Analizator Giełdowy + TIMDR</h1>
+    <div class="sub">MA crossover + RSI + pamięć adaptacyjna · backtest · ocena TIMDR (Λ–τ–ρ)</div>
+  </div>
+  <div id="statusPill" class="status-pill status-hold">brak danych</div>
+</header>
+
+<div class="controls">
+  <label>ticker</label>
+  <select id="inTickerList">
+    <optgroup label="Waluty (Forex)">
+      <option value="EURPLN=X" selected>EUR/PLN</option>
+      <option value="USDPLN=X">USD/PLN</option>
+      <option value="GBPPLN=X">GBP/PLN</option>
+      <option value="CHFPLN=X">CHF/PLN</option>
+      <option value="EURUSD=X">EUR/USD</option>
+      <option value="GBPUSD=X">GBP/USD</option>
+      <option value="USDJPY=X">USD/JPY</option>
+    </optgroup>
+    <optgroup label="Kryptowaluty">
+      <option value="BTC-USD">Bitcoin (BTC-USD)</option>
+      <option value="ETH-USD">Ethereum (ETH-USD)</option>
+      <option value="SOL-USD">Solana (SOL-USD)</option>
+    </optgroup>
+    <optgroup label="Surowce">
+      <option value="GC=F">Złoto (GC=F)</option>
+      <option value="SI=F">Srebro (SI=F)</option>
+      <option value="CL=F">Ropa WTI (CL=F)</option>
+      <option value="NG=F">Gaz ziemny (NG=F)</option>
+    </optgroup>
+    <optgroup label="Indeksy">
+      <option value="^GSPC">S&amp;P 500 (^GSPC)</option>
+      <option value="^DJI">Dow Jones (^DJI)</option>
+      <option value="^NDX">Nasdaq 100 (^NDX)</option>
+      <option value="^GDAXI">DAX (^GDAXI)</option>
+      <option value="WIG20.WA">WIG20 (WIG20.WA)</option>
+    </optgroup>
+    <optgroup label="Akcje - USA">
+      <option value="AAPL">Apple (AAPL)</option>
+      <option value="MSFT">Microsoft (MSFT)</option>
+      <option value="GOOGL">Alphabet (GOOGL)</option>
+      <option value="AMZN">Amazon (AMZN)</option>
+      <option value="NVDA">Nvidia (NVDA)</option>
+      <option value="TSLA">Tesla (TSLA)</option>
+      <option value="META">Meta (META)</option>
+    </optgroup>
+    <optgroup label="Akcje - GPW">
+      <option value="PKN.WA">Orlen (PKN.WA)</option>
+      <option value="PKO.WA">PKO BP (PKO.WA)</option>
+      <option value="KGH.WA">KGHM (KGH.WA)</option>
+      <option value="CDR.WA">CD Projekt (CDR.WA)</option>
+      <option value="PZU.WA">PZU (PZU.WA)</option>
+      <option value="ALE.WA">Allegro (ALE.WA)</option>
+    </optgroup>
+    <option value="__custom__">✎ inny (wpisz ręcznie poniżej)</option>
+  </select>
+  <input id="inTicker" type="text" value="EURPLN=X" title="Ticker (Yahoo Finance) - można wpisać ręcznie">
+  <label>okres</label>
+  <select id="inPeriod">
+    <option value="6mo">6mo</option>
+    <option value="1y" selected>1y</option>
+    <option value="2y">2y</option>
+    <option value="5y">5y</option>
+  </select>
+  <button id="btnAnalyze">▶ Analizuj (żywe dane)</button>
+  <button id="btnDemo" class="secondary">🎲 Dane demo (syntetyczne)</button>
+  <span id="err"></span>
+</div>
+<div class="note" id="dataNote">Kliknij "Analizuj" (wymaga internetu na tym komputerze) albo "Dane demo" (zawsze działa, dane syntetyczne).</div>
+
+<div class="cards">
+  <div class="card"><div class="label">Rekomendacja</div><div class="value" id="valAction" style="font-size:16px;">—</div></div>
+  <div class="card"><div class="label">Cena / SL / TP</div><div class="value" id="valPrice" style="font-size:16px;">—</div></div>
+  <div class="card"><div class="label">Sugerowana pozycja</div><div class="value"><span id="valPosSize">—</span></div></div>
+  <div class="card"><div class="label">R_total (TIMDR)</div><div class="value"><span id="valRtotal">—</span></div></div>
+  <div class="card"><div class="label">Sharpe / Winrate / DD</div><div class="value" id="valMetrics" style="font-size:15px;">—</div></div>
+</div>
+
+<div class="grid2">
+  <div class="panel">
+    <h2>Cena + średnie kroczące</h2>
+    <div class="legend">
+      <span><i class="dot" style="background:#4f9dff"></i>Close</span>
+      <span><i class="dot" style="background:#35d488"></i>MA fast</span>
+      <span><i class="dot" style="background:#f5a623"></i>MA slow</span>
+    </div>
+    <canvas id="chartPrice" height="220"></canvas>
+    <h2 style="margin-top:16px;">Krzywa equity (backtest strategii)</h2>
+    <canvas id="chartEquity" height="140"></canvas>
+  </div>
+  <div class="panel">
+    <h2>Ocena TIMDR</h2>
+    <div class="timdr-row"><span>Emergencja (E)</span><strong id="timdrE">—</strong></div>
+    <div class="timdr-row"><span>Ufność</span><strong id="timdrConf">—</strong></div>
+    <div class="timdr-row"><span>sharpe_n</span><span id="timdrSharpeN">—</span></div>
+    <div class="timdr-row"><span>winrate_n</span><span id="timdrWinrateN">—</span></div>
+    <div class="timdr-row"><span>dd_n</span><span id="timdrDdN">—</span></div>
+    <div class="warn-box" id="timdrWarnings"></div>
+    <h2 style="margin-top:16px;">RSI</h2>
+    <canvas id="chartRsi" height="120"></canvas>
+  </div>
+</div>
+
+<footer>Analizator-giełdowy + TIMDR · lokalne API (Flask, 127.0.0.1:5000) · wykresy rysowane własnym kodem (Canvas 2D), bez CDN</footer>
+
+<script>
+'use strict';
+const COLORS = { ok:'#35d488', warn:'#f5a623', crit:'#ef4b5f', accent:'#4f9dff', muted:'#8393ab', grid:'#1c2536', axis:'#8393ab' };
+
+function showError(msg){
+  document.getElementById('err').textContent = msg;
+  if (msg) console.error('[dashboard]', msg);
+}
+function fmt(x, digits){
+  if (x === null || x === undefined || Number.isNaN(x)) return '—';
+  return Number(x).toFixed(digits === undefined ? 2 : digits);
+}
+
+function drawChart(canvas, opts){
+  if (!canvas) return;
+  const parentWidth = canvas.parentElement ? canvas.parentElement.clientWidth : 400;
+  const cssWidth = Math.max(200, parentWidth);
+  const cssHeight = opts.height || 160;
+  const dpr = window.devicePixelRatio || 1;
+
+  canvas.style.width = cssWidth + 'px';
+  canvas.style.height = cssHeight + 'px';
+  canvas.width = Math.round(cssWidth * dpr);
+  canvas.height = Math.round(cssHeight * dpr);
+
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cssWidth, cssHeight);
+
+  const labels = opts.labels || [];
+  const n = labels.length;
+  const pad = { left: 46, right: 10, top: 8, bottom: 16 };
+  const plotW = Math.max(10, cssWidth - pad.left - pad.right);
+  const plotH = Math.max(10, cssHeight - pad.top - pad.bottom);
+
+  if (n === 0){
+    ctx.fillStyle = COLORS.muted; ctx.font = '11px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('brak danych', cssWidth / 2, cssHeight / 2);
+    return;
+  }
+
+  const allY = [];
+  (opts.series || []).forEach(s => (s.data || []).forEach(v => { if (v !== null && v !== undefined && isFinite(v)) allY.push(v); }));
+  (opts.hlines || []).forEach(h => allY.push(h.y));
+  if (allY.length === 0){ allY.push(0, 1); }
+
+  let yMin = Math.min(...allY), yMax = Math.max(...allY);
+  if (yMin === yMax){ yMin -= 1; yMax += 1; }
+  const yPad = (yMax - yMin) * 0.08;
+  yMin -= yPad; yMax += yPad;
+
+  const xAt = i => pad.left + (n <= 1 ? plotW / 2 : (i / (n - 1)) * plotW);
+  const yAt = v => pad.top + plotH - ((v - yMin) / (yMax - yMin)) * plotH;
+
+  ctx.strokeStyle = COLORS.grid; ctx.lineWidth = 1;
+  ctx.fillStyle = COLORS.axis; ctx.font = '9px monospace'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  const gridLines = 4;
+  for (let g = 0; g <= gridLines; g++){
+    const yy = pad.top + (g / gridLines) * plotH;
+    ctx.beginPath(); ctx.moveTo(pad.left, yy); ctx.lineTo(pad.left + plotW, yy); ctx.stroke();
+    const val = yMax - (g / gridLines) * (yMax - yMin);
+    ctx.fillText(fmt(val, Math.abs(val) < 10 ? 2 : 0), pad.left - 4, yy);
+  }
+
+  (opts.hlines || []).forEach(h => {
+    ctx.strokeStyle = h.color || COLORS.crit; ctx.setLineDash([6, 4]); ctx.lineWidth = 1;
+    const yy = yAt(h.y);
+    ctx.beginPath(); ctx.moveTo(pad.left, yy); ctx.lineTo(pad.left + plotW, yy); ctx.stroke();
+    ctx.setLineDash([]);
+  });
+
+  (opts.series || []).forEach(s => {
+    ctx.strokeStyle = s.color; ctx.lineWidth = s.width || 1.4;
+    ctx.beginPath();
+    let started = false;
+    (s.data || []).forEach((v, i) => {
+      if (v === null || v === undefined || !isFinite(v)){ started = false; return; }
+      const xx = xAt(i), yy = yAt(v);
+      if (!started){ ctx.moveTo(xx, yy); started = true; } else { ctx.lineTo(xx, yy); }
+    });
+    ctx.stroke();
+  });
+
+  ctx.fillStyle = COLORS.axis; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.font = '9px monospace';
+  const xTicks = Math.min(6, n);
+  for (let k = 0; k < xTicks; k++){
+    const idx = Math.round(k * (n - 1) / Math.max(1, xTicks - 1));
+    ctx.fillText(String(labels[idx]).slice(0, 10), xAt(idx), pad.top + plotH + 2);
+  }
+}
+
+async function loadDemo(){
+  showError('');
+  document.getElementById('dataNote').textContent = 'Ładuję dane demo (syntetyczne, nie żywy rynek)...';
+  const res = await fetch('/api/demo');
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+  renderResult(data);
+}
+
+async function loadLive(){
+  showError('');
+  const ticker = (document.getElementById('inTicker').value || 'AAPL').toUpperCase();
+  const period = document.getElementById('inPeriod').value;
+  document.getElementById('dataNote').textContent = `Pobieram żywe dane dla ${ticker} (${period})...`;
+  const res = await fetch('/api/analyze', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ticker, period }),
+  });
+  const data = await res.json();
+  if (!res.ok){
+    throw new Error((data.error || ('HTTP ' + res.status)) + (data.hint ? '\n' + data.hint : ''));
+  }
+  renderResult(data);
+}
+
+function setStatus(action){
+  const pill = document.getElementById('statusPill');
+  pill.classList.remove('status-buy', 'status-hold', 'status-sell');
+  if (action.includes('KUP')){ pill.textContent = 'kupuj'; pill.classList.add('status-buy'); }
+  else if (action.includes('SPRZEDAJ')){ pill.textContent = 'sprzedaj'; pill.classList.add('status-sell'); }
+  else { pill.textContent = 'trzymaj'; pill.classList.add('status-hold'); }
+}
+
+function renderResult(data){
+  const rec = data.recommendation, timdr = data.timdr, m = data.metrics;
+  document.getElementById('dataNote').textContent = data.is_demo
+    ? `Dane SYNTETYCZNE (demo) dla ${data.ticker} — nie prawdziwy rynek.`
+    : `Żywe dane Yahoo Finance dla ${data.ticker}.`;
+
+  setStatus(rec.action);
+  document.getElementById('valAction').textContent = rec.action;
+  document.getElementById('valPrice').textContent = `${fmt(rec.price)}$ / ${fmt(rec.sl)}$ / ${fmt(rec.tp)}$`;
+  document.getElementById('valPosSize').textContent = rec.position_size;
+  document.getElementById('valRtotal').textContent = fmt(timdr.R_total, 3);
+  document.getElementById('valMetrics').textContent = `${fmt(m.sharpe,2)} / ${fmt(m.winrate*100,0)}% / ${fmt(m.drawdown*100,1)}%`;
+
+  document.getElementById('timdrE').textContent = timdr.E;
+  document.getElementById('timdrConf').textContent = fmt(timdr.confidence * 100, 0) + '%';
+  document.getElementById('timdrSharpeN').textContent = fmt(timdr.details.sharpe_n, 3);
+  document.getElementById('timdrWinrateN').textContent = fmt(timdr.details.winrate_n, 3);
+  document.getElementById('timdrDdN').textContent = fmt(timdr.details.dd_n, 3);
+  document.getElementById('timdrWarnings').textContent = (timdr.warnings && timdr.warnings.length)
+    ? '⚠ ' + timdr.warnings.join(' | ') : '';
+
+  drawChart(document.getElementById('chartPrice'), {
+    height: 220, labels: data.dates,
+    series: [
+      { data: data.close, color: COLORS.accent, width: 1.6 },
+      { data: data.ma_fast, color: COLORS.ok, width: 1.1 },
+      { data: data.ma_slow, color: COLORS.warn, width: 1.1 },
+    ],
+  });
+  drawChart(document.getElementById('chartEquity'), {
+    height: 140, labels: data.dates,
+    hlines: [{ y: 1.0, color: '#3a4a68' }],
+    series: [{ data: data.equity, color: COLORS.ok, width: 1.4 }],
+  });
+  drawChart(document.getElementById('chartRsi'), {
+    height: 120, labels: data.dates,
+    hlines: [{ y: 70, color: COLORS.crit }, { y: 30, color: COLORS.ok }],
+    series: [{ data: data.rsi, color: COLORS.accent, width: 1.2 }],
+  });
+}
+
+document.getElementById('btnAnalyze').addEventListener('click', () => loadLive().catch(e => showError(e.message)));
+document.getElementById('btnDemo').addEventListener('click', () => loadDemo().catch(e => showError(e.message)));
+
+document.getElementById('inTickerList').addEventListener('change', (e) => {
+  const val = e.target.value;
+  const tickerInput = document.getElementById('inTicker');
+  if (val === '__custom__'){
+    tickerInput.value = '';
+    tickerInput.focus();
+    return;
+  }
+  tickerInput.value = val;
+});
+
+// Jeśli ktoś ręcznie wpisze coś inne niż aktualnie wybrana opcja z listy,
+// przełącz listę na "inny", żeby oba pola nie pokazywały sprzecznych rzeczy.
+document.getElementById('inTicker').addEventListener('input', (e) => {
+  const list = document.getElementById('inTickerList');
+  const typed = e.target.value.toUpperCase();
+  const match = Array.from(list.options).find(o => o.value === typed);
+  list.value = match ? match.value : '__custom__';
+});
+
+loadDemo().catch(e => showError(e.message));
+</script>
+</body>
+</html>
