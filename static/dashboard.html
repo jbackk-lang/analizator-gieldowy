@@ -24,7 +24,7 @@
   .controls label{ font-size:12px; color:var(--muted); margin-right:4px; }
   .controls input[type=text]{ background:#0c121d; border:1px solid var(--panel-border); color:var(--text); border-radius:6px; padding:6px 10px; width:110px; font-family:var(--mono); font-size:13px; text-transform:uppercase; }
   .controls select{ background:#0c121d; border:1px solid var(--panel-border); color:var(--text); border-radius:6px; padding:6px 8px; font-size:12px; }
-  .controls select#inTickerList{ max-width:220px; }
+  .controls select#inTickerList{ max-width:230px; }
   .controls button{ background:var(--accent); color:#04101f; border:none; border-radius:6px; padding:8px 16px; font-weight:700; font-size:12px; cursor:pointer; }
   .controls button.secondary{ background:#233149; color:var(--text); }
   .controls button:hover{ filter:brightness(1.1); }
@@ -63,14 +63,45 @@
 <div class="controls">
   <label>ticker</label>
   <select id="inTickerList">
-    <optgroup label="Waluty (Forex)">
+    <optgroup label="Waluty (Forex) - PLN">
       <option value="EURPLN=X" selected>EUR/PLN</option>
       <option value="USDPLN=X">USD/PLN</option>
       <option value="GBPPLN=X">GBP/PLN</option>
       <option value="CHFPLN=X">CHF/PLN</option>
+      <option value="JPYPLN=X">JPY/PLN</option>
+      <option value="CZKPLN=X">CZK/PLN</option>
+      <option value="NOKPLN=X">NOK/PLN</option>
+      <option value="SEKPLN=X">SEK/PLN</option>
+      <option value="HUFPLN=X">HUF/PLN</option>
+    </optgroup>
+    <optgroup label="Waluty (Forex) - pary główne">
       <option value="EURUSD=X">EUR/USD</option>
       <option value="GBPUSD=X">GBP/USD</option>
       <option value="USDJPY=X">USD/JPY</option>
+      <option value="USDCHF=X">USD/CHF</option>
+      <option value="USDCAD=X">USD/CAD</option>
+      <option value="AUDUSD=X">AUD/USD</option>
+      <option value="NZDUSD=X">NZD/USD</option>
+    </optgroup>
+    <optgroup label="Waluty (Forex) - krzyżowe">
+      <option value="EURGBP=X">EUR/GBP</option>
+      <option value="EURJPY=X">EUR/JPY</option>
+      <option value="EURCHF=X">EUR/CHF</option>
+      <option value="EURCAD=X">EUR/CAD</option>
+      <option value="EURAUD=X">EUR/AUD</option>
+      <option value="GBPJPY=X">GBP/JPY</option>
+      <option value="CHFJPY=X">CHF/JPY</option>
+      <option value="AUDJPY=X">AUD/JPY</option>
+      <option value="CADJPY=X">CAD/JPY</option>
+    </optgroup>
+    <optgroup label="Waluty (Forex) - egzotyczne">
+      <option value="USDCNY=X">USD/CNY</option>
+      <option value="USDTRY=X">USD/TRY</option>
+      <option value="USDMXN=X">USD/MXN</option>
+      <option value="USDZAR=X">USD/ZAR</option>
+      <option value="USDINR=X">USD/INR</option>
+      <option value="USDNOK=X">USD/NOK</option>
+      <option value="USDSEK=X">USD/SEK</option>
     </optgroup>
     <optgroup label="Kryptowaluty">
       <option value="BTC-USD">Bitcoin (BTC-USD)</option>
@@ -260,7 +291,7 @@ async function loadDemo(){
 
 async function loadLive(){
   showError('');
-  const ticker = (document.getElementById('inTicker').value || 'AAPL').toUpperCase();
+  const ticker = (document.getElementById('inTicker').value || 'EURPLN=X').toUpperCase();
   const period = document.getElementById('inPeriod').value;
   document.getElementById('dataNote').textContent = `Pobieram żywe dane dla ${ticker} (${period})...`;
   const res = await fetch('/api/analyze', {
