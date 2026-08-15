@@ -1,4 +1,6 @@
-# src/main.py — ANALIZATOR GIELDOWY z REKOMENDACJAMI I TIMDR
+# main.py — ANALIZATOR GIELDOWY z REKOMENDACJAMI I TIMDR
+# (kopia bez zmian z jbackk-lang/analizator-gieldowy - błędy były w
+# core/timdr.py, patrz README.md)
 
 import argparse
 import sys
@@ -11,10 +13,6 @@ from data.loader import load_ohlc
 from models.backtest import backtest_signals, compute_metrics
 from models.signals import memory_adaptive_fused_signal
 
-
-# ---------------------------------------------------------
-# Formatting i Logika Rekomendacji
-# ---------------------------------------------------------
 
 def colorize_emergence(E: str) -> str:
     if "obiekt" in E and "pół" not in E:
@@ -33,7 +31,6 @@ def colorize_recommendation(rec: str) -> str:
 
 
 def calculate_atr(df: pd.DataFrame, window: int = 14) -> float:
-    """Kalkulacja ATR na potrzeby dynamicznych poziomów SL/TP."""
     high_low = df["High"] - df["Low"]
     high_close = np.abs(df["High"] - df["Close"].shift())
     low_close = np.abs(df["Low"] - df["Close"].shift())
@@ -44,11 +41,10 @@ def calculate_atr(df: pd.DataFrame, window: int = 14) -> float:
 
 
 def generate_raw_recommendation(df: pd.DataFrame, signal_col: str = "signal_memory_adaptive") -> dict:
-    """Tłumaczy surowy sygnał z modelu na rekomendację handlową oraz poziomy SL/TP."""
     last_row = df.iloc[-1]
     last_signal = float(last_row[signal_col])
     current_price = float(last_row["Close"])
-    
+
     atr = calculate_atr(df)
 
     if last_signal >= 0.75:
@@ -82,30 +78,21 @@ def generate_raw_recommendation(df: pd.DataFrame, signal_col: str = "signal_memo
     }
 
 
-# ---------------------------------------------------------
-# Analiza pojedynczego tickera
-# ---------------------------------------------------------
-
-def analyze_single(ticker: str, period: str, interval: str, verbose: bool):
+def analyze_single(ticker: str, period: str, interval: str, verbose: bool, csv_path: str = None):
     print(colored(f"\n=== ANALIZA: {ticker} | {period} | {interval} ===", "cyan"))
 
-    # 1. Dane
-    df = load_ohlc(ticker, period=period, interval=interval)
+    df = load_ohlc(ticker, period=period, csv_path=csv_path)
     if df is None or len(df) < 10:
         print(colored("Brak danych lub za mało świec.", "red"))
         return None
 
-    # 2. Sygnał
     df = memory_adaptive_fused_signal(df)
 
-    # 3. Surowa rekomendacja
     raw_rec = generate_raw_recommendation(df, signal_col="signal_memory_adaptive")
 
-    # 4. Backtest & Metryki
     bt = backtest_signals(df, signal_col="signal_memory_adaptive")
     metrics = compute_metrics(bt)
 
-    # 5. Ewaluacja TIMDR
     config = {
         "T": f"{ticker} / {interval}",
         "I": df,
@@ -115,10 +102,8 @@ def analyze_single(ticker: str, period: str, interval: str, verbose: bool):
     }
     timdr_res = timdr_evaluate(config)
 
-    # 6. Modyfikacja rekomendacji na podstawie TIMDR
     final_rec = filter_recommendation_by_timdr(raw_rec, timdr_res)
 
-    # 7. Prezentacja wyników
     print(colored(">>> REKOMENDACJA INWESTYCYJNA <<<", "yellow", attrs=["bold"]))
     print("Decyzja:         ", colorize_recommendation(final_rec["action"]))
     print("Sugerowana Pozycja:", colored(final_rec["position_size"], "cyan"))
@@ -157,10 +142,6 @@ def analyze_single(ticker: str, period: str, interval: str, verbose: bool):
     }
 
 
-# ---------------------------------------------------------
-# Tryb Batch
-# ---------------------------------------------------------
-
 def analyze_batch(tickers, period, interval, verbose):
     results = []
     for t in tickers:
@@ -170,10 +151,6 @@ def analyze_batch(tickers, period, interval, verbose):
     return pd.DataFrame(results)
 
 
-# ---------------------------------------------------------
-# CLI
-# ---------------------------------------------------------
-
 def build_cli():
     parser = argparse.ArgumentParser(description="Analizator giełdowy + TIMDR z modułem rekomendacyjnym")
     parser.add_argument("ticker", nargs="*", help="Ticker lub lista tickerów (np. AAPL BTC-USD TSLA)")
@@ -181,6 +158,7 @@ def build_cli():
     parser.add_argument("--interval", default="1d", help="Interwał (np. 1d, 4h, 1wk)")
     parser.add_argument("--verbose", action="store_true", help="Pokaż więcej danych")
     parser.add_argument("--save", action="store_true", help="Zapisz wyniki do CSV")
+    parser.add_argument("--csv", default=None, help="Wczytaj z pliku CSV zamiast Yahoo Finance")
     return parser
 
 
@@ -191,14 +169,14 @@ def main():
     tickers = args.ticker if args.ticker else ["AAPL"]
 
     if len(tickers) == 1:
-        result = analyze_single(tickers[0], args.period, args.interval, args.verbose)
+        result = analyze_single(tickers[0], args.period, args.interval, args.verbose, csv_path=args.csv)
         if args.save and result:
             pd.DataFrame([result]).to_csv("result.csv", index=False)
             print(colored("Zapisano: result.csv", "green"))
     else:
         df_batch = analyze_batch(tickers, args.period, args.interval, args.verbose)
         summary_cols = ["ticker", "rekomendacja", "alokacja", "cena", "stop_loss", "take_profit", "R_total"]
-        
+
         print(colored("\n=== PODSUMOWANIE BATCH ===", "cyan", attrs=["bold"]))
         print(df_batch[summary_cols].to_string(index=False))
 

@@ -1,0 +1,10 @@
+flask>=3.0
+pandas>=2.0
+numpy>=1.24
+# WAZNE: wymagana swiezsza wersja yfinance (z curl_cffi) - Yahoo Finance
+# wprowadzil ochrone antybotowa i starsze wersje dostaja puste dane /
+# JSONDecodeError zamiast prawdziwych notowan. run.bat wymusza
+# "pip install --upgrade yfinance" wlasnie z tego powodu.
+yfinance>=0.2.55
+termcolor>=2.0
+pytest>=7.0
