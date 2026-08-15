@@ -1,0 +1,1 @@
+pip install yfinance pandas python wig20_timdr_scan.py
