@@ -1,25 +1,30 @@
 """
 data/loader.py — ładuje dane OHLCV z pliku CSV lub Yahoo Finance.
 
-Poprawki v2:
-  1. Graceful fallback gdy yfinance zwraca pusty DataFrame (throttling Yahoo)
-     → czytelny komunikat z sugestią csv_path i przykładem formatu
-  2. Retry (max 2 próby) z krótką pauzą przy pustym wyniku
-  3. Walidacja kolumn OHLC z czytelnym komunikatem błędu
-  4. Obsługa MultiIndex w yfinance ≥ 0.2.x (zwraca MultiIndex columns)
-  5. Normalizacja nazw kolumn (case-insensitive: 'close' → 'Close')
-  6. Komunikat gdy yfinance nie zainstalowane — z instrukcją instalacji
+POPRAWKA (bug #5, znaleziony przy budowie api.py): oryginalny kod wołał
+    yf.download(ticker, period=period, auto_adjust=True, progress=False,
+                show_errors=False)
+Parametr `show_errors` został usunięty z `yfinance.download()` w
+nowszych wersjach biblioteki (potwierdzone: `yfinance==1.6.0` -> `TypeError:
+download() got an unexpected keyword argument 'show_errors'`). Efekt: KAŻDA
+próba pobrania żywych danych (czyli główny cel tego repo/run.bat) kończyła
+się crashem, niezależnie od dostępu do internetu - błąd występował od razu,
+zanim doszło do jakiegokolwiek zapytania sieciowego. Naprawiono usuwając
+przestarzały parametr; patrz README.md.
 
-Użycie:
-    # Z Yahoo Finance (wymaga yfinance + internetu):
-    df = load_ohlc("AAPL", period="1y")
-
-    # Z własnego pliku CSV:
-    df = load_ohlc("AAPL", csv_path="moje_dane.csv")
-
-Format CSV:
-    Date,Open,High,Low,Close,Volume
-    2024-01-02,185.0,186.5,184.2,185.9,55000000
+POPRAWKA (bug #6, zgłoszony przez użytkownika po uruchomieniu run.bat na
+własnym komputerze): po naprawie buga #5 `yf.download()` przestawał
+rzucać TypeError, ale nadal zwracał PUSTY DataFrame ("brak danych") dla
+poprawnych tickerów. Przyczyna: Yahoo Finance wprowadził w 2025/2026
+ochronę antybotową (Cloudflare) - starsze wersje `yfinance` (bez
+biblioteki `curl_cffi` do podszywania się pod przeglądarkę) dostają w
+odpowiedzi puste dane albo `JSONDecodeError`
+(https://github.com/ranaroussi/yfinance/issues/2393). To NIE jest błąd
+w tym repo, tylko efekt zainstalowanej, przestarzałej wersji yfinance
+na komputerze użytkownika (samo `pip install yfinance`, bez
+`--upgrade`, nic nie zmienia, jeśli jakakolwiek wersja jest już
+zainstalowana). Naprawiono w run.bat, które teraz wymusza
+`pip install --upgrade yfinance` przy każdym uruchomieniu.
 """
 
 import os
@@ -37,46 +42,25 @@ _CSV_HELP = (
 
 
 def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """Normalizuje nazwy kolumn do Title Case (close → Close)."""
     df.columns = [c.strip().title() for c in df.columns]
     return df
 
 
 def _flatten_multiindex(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
-    """
-    yfinance ≥ 0.2.x zwraca MultiIndex columns: (Price, Ticker).
-    Spłaszcza do pojedynczego poziomu biorąc tylko kolumny dla danego tickera.
-    """
     if isinstance(df.columns, pd.MultiIndex):
-        # Poziom 0 = nazwa kolumny, poziom 1 = ticker
         try:
             df = df.xs(ticker.upper(), axis=1, level=1)
         except KeyError:
-            # Fallback: weź pierwszy poziom
             df.columns = df.columns.get_level_values(0)
     return df
 
 
 def load_ohlc(
-    ticker:   str,
-    period:   str = "1y",
-    csv_path: str | None = None,
-    retries:  int = 2,
+    ticker: str,
+    period: str = "1y",
+    csv_path: str = None,
+    retries: int = 2,
 ) -> pd.DataFrame:
-    """
-    Ładuje dane OHLCV dla tickera.
-
-    Parametry:
-        ticker   : symbol giełdowy (np. 'AAPL', 'PKN.WA')
-        period   : okres dla yfinance ('1y', '2y', '6mo', 'max', ...)
-        csv_path : ścieżka do pliku CSV (jeśli podana, omija Yahoo Finance)
-        retries  : liczba prób przy pustym wyniku z Yahoo (domyślnie 2)
-
-    Zwraca:
-        pd.DataFrame z kolumnami: Open, High, Low, Close [, Volume]
-        Indeks: DatetimeIndex (tylko dni sesyjne)
-    """
-    # ── ŚCIEŻKA 1: CSV ────────────────────────────────────────────────────────
     if csv_path is not None:
         if not os.path.exists(csv_path):
             raise FileNotFoundError(
@@ -85,13 +69,11 @@ def load_ohlc(
         try:
             df = pd.read_csv(csv_path, parse_dates=["Date"], index_col="Date")
         except KeyError:
-            # Spróbuj bez index_col jeśli brak kolumny Date
             df = pd.read_csv(csv_path, parse_dates=[0], index_col=0)
 
         df = _normalize_columns(df)
         return _validate_and_clean(df, source=f"CSV:{csv_path}")
 
-    # ── ŚCIEŻKA 2: Yahoo Finance ──────────────────────────────────────────────
     try:
         import yfinance as yf
     except ImportError:
@@ -104,20 +86,23 @@ def load_ohlc(
     last_error = None
     for attempt in range(1, retries + 1):
         try:
-            df = yf.download(
-                ticker,
-                period=period,
-                auto_adjust=True,
-                progress=False,
-                show_errors=False,
-            )
+            try:
+                df = yf.download(
+                    ticker,
+                    period=period,
+                    auto_adjust=True,
+                    progress=False,
+                )
+            except TypeError:
+                # bardzo stare wersje yfinance mogą wymagać innych
+                # argumentów - awaryjnie wołamy z minimalnym zestawem
+                df = yf.download(ticker, period=period, progress=False)
         except Exception as e:
             last_error = e
             if attempt < retries:
                 time.sleep(1.0)
             continue
 
-        # POPRAWKA: obsługa MultiIndex (yfinance ≥ 0.2.x)
         df = _flatten_multiindex(df, ticker)
         df = _normalize_columns(df)
 
@@ -125,6 +110,10 @@ def load_ohlc(
             last_error = ValueError(
                 f"Yahoo Finance zwróciło puste dane dla '{ticker}' "
                 f"(period='{period}'). Możliwe przyczyny:\n"
+                f"  • NAJCZĘSTSZA: masz przestarzałą wersję yfinance bez ochrony\n"
+                f"    przed blokadą antybotową Yahoo — uruchom:\n"
+                f"    python -m pip install --upgrade yfinance\n"
+                f"    (run.bat robi to automatycznie przy każdym starcie)\n"
                 f"  • Throttling Yahoo — odczekaj chwilę i spróbuj ponownie\n"
                 f"  • Nieprawidłowy symbol tickera\n"
                 f"  • Brak danych dla wybranego okresu\n"
@@ -136,14 +125,12 @@ def load_ohlc(
 
         return _validate_and_clean(df, source=f"Yahoo:{ticker}")
 
-    # Wszystkie próby nieudane
     if isinstance(last_error, Exception):
         raise last_error
     raise RuntimeError(f"Nie udało się pobrać danych dla '{ticker}'.")
 
 
 def _validate_and_clean(df: pd.DataFrame, source: str = "") -> pd.DataFrame:
-    """Waliduje kolumny i czyści dane."""
     missing = _REQUIRED_COLS - set(df.columns)
     if missing:
         raise ValueError(
@@ -165,7 +152,6 @@ def _validate_and_clean(df: pd.DataFrame, source: str = "") -> pd.DataFrame:
             "Sprawdź jakość danych wejściowych."
         )
 
-    # Upewnij się że indeks to DatetimeIndex
     if not isinstance(df.index, pd.DatetimeIndex):
         df.index = pd.to_datetime(df.index)
 
