@@ -30,6 +30,8 @@
   .controls button:hover{ filter:brightness(1.1); }
   #err{ color:var(--crit); font-size:12px; font-family:var(--mono); margin-left:auto; white-space:pre-wrap; max-width:420px; }
   .note{ font-size:12px; color:var(--muted); margin:2px 0 16px 2px; font-style:italic; }
+  .disclaimer{ background:rgba(245,166,35,.10); border:1px solid var(--warn); color:var(--warn); border-radius:8px; padding:10px 14px; font-size:12px; line-height:1.5; margin-bottom:14px; }
+  .disclaimer strong{ color:var(--warn); }
 
   .cards{ display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:14px; margin-bottom:18px; }
   .card{ background:var(--panel); border:1px solid var(--panel-border); border-radius:10px; padding:16px 18px; }
@@ -59,6 +61,13 @@
   </div>
   <div id="statusPill" class="status-pill status-hold">brak danych</div>
 </header>
+
+<div class="disclaimer" id="disclaimerBox">
+  ⚠ <strong>Uwaga o ryzyku inwestycyjnym:</strong> to narzędzie ma charakter wyłącznie
+  informacyjny/edukacyjny i NIE stanowi porady inwestycyjnej. Wyniki backtestów nie
+  gwarantują przyszłych rezultatów. Inwestowanie wiąże się z ryzykiem utraty części lub
+  całości kapitału — wszystkie decyzje inwestycyjne podejmujesz samodzielnie i na własne ryzyko.
+</div>
 
 <div class="controls">
   <label>ticker</label>
@@ -317,6 +326,13 @@ function setStatus(action){
 
 function renderResult(data){
   const rec = data.recommendation, timdr = data.timdr, m = data.metrics;
+  if (data.disclaimer){
+    // Zrodlo prawdy to backend (api.py, INVESTMENT_RISK_DISCLAIMER_PL) -
+    // banner w HTML to tylko domyslny tekst widoczny przed pierwszym
+    // zaladowaniem danych; po odpowiedzi API nadpisujemy go dokladna
+    // trescia z serwera, zeby oba miejsca nigdy sie nie rozjechaly.
+    document.getElementById('disclaimerBox').innerHTML = '⚠ <strong>Uwaga o ryzyku inwestycyjnym:</strong> ' + data.disclaimer;
+  }
   document.getElementById('dataNote').textContent = data.is_demo
     ? `Dane SYNTETYCZNE (demo) dla ${data.ticker} — nie prawdziwy rynek.`
     : `Żywe dane Yahoo Finance dla ${data.ticker}.`;
