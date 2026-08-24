@@ -62,6 +62,17 @@ def test_index_serwuje_dashboard(client):
     assert b"Analizator" in resp.data
 
 
+def test_dashboard_html_pokazuje_uwage_o_ryzyku(client):
+    """Uzytkownik zauwazyl, ze disclaimer byl tylko w JSON API, nie
+    widoczny na stronie - musi byc tez w HTML dashboardu, widoczny od
+    razu (nie dopiero po zaladowaniu danych)."""
+    resp = client.get("/")
+    html = resp.get_data(as_text=True)
+    assert 'id="disclaimerBox"' in html
+    assert "ryzyko" in html.lower()
+    assert "porad" in html.lower()
+
+
 def test_bug7_odpowiedz_demo_jest_scisle_poprawnym_jsonem(client):
     """Regresja dla Bug 7: przeglądarka zgłaszała
     "Unexpected token 'N', ...'ma_fast':[NaN,NaN,Na'... is not valid JSON".
