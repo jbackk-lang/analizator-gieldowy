@@ -35,6 +35,16 @@ app = Flask(__name__, static_folder="static", static_url_path="")
 
 DEMO_CSV = os.path.join(os.path.dirname(__file__), "demo_data.csv")
 
+INVESTMENT_RISK_DISCLAIMER_PL = (
+    "Analiza, sygnały i rekomendacje generowane przez ten system mają charakter "
+    "wyłącznie informacyjny/edukacyjny i NIE stanowią porady inwestycyjnej, "
+    "rekomendacji w rozumieniu przepisów o obrocie instrumentami finansowymi ani "
+    "zachęty do kupna/sprzedaży jakiegokolwiek instrumentu finansowego. Wyniki "
+    "backtestów nie gwarantują przyszłych rezultatów. Inwestowanie wiąże się z "
+    "ryzykiem utraty części lub całości zainwestowanego kapitału. Wszystkie "
+    "decyzje inwestycyjne podejmujesz samodzielnie i na własne ryzyko."
+)
+
 
 def _clean_json(obj):
     """
@@ -131,6 +141,7 @@ def run_full_analysis(ticker: str, df: pd.DataFrame, period: str, interval: str)
         "recommendation": final_rec,
         "metrics": metrics,
         "timdr": timdr_res,
+        "disclaimer": INVESTMENT_RISK_DISCLAIMER_PL,
     }
     # patrz _clean_json() - zamienia NaN/Infinity na None (Bug 7)
     return _clean_json(result)
@@ -143,7 +154,7 @@ def index():
 
 @app.route("/api/health")
 def api_health():
-    return jsonify({"status": "ok"})
+    return jsonify({"status": "ok", "disclaimer": INVESTMENT_RISK_DISCLAIMER_PL})
 
 
 @app.route("/api/demo")

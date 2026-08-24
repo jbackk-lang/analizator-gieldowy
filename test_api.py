@@ -32,7 +32,27 @@ def client():
 def test_health(client):
     resp = client.get("/api/health")
     assert resp.status_code == 200
-    assert resp.get_json() == {"status": "ok"}
+    data = resp.get_json()
+    assert data["status"] == "ok"
+    assert "wlasne ryzyko" in data["disclaimer"] or "ryzykiem" in data["disclaimer"]
+
+
+def test_demo_i_analyze_zawieraja_uwage_o_ryzyku_inwestycyjnym(client):
+    """Uzytkownik poprosil wprost o dodanie uwagi o inwestowaniu na
+    wlasne ryzyko do API - musi byc obecna w kazdej odpowiedzi z
+    rekomendacja (nie tylko w README/UI)."""
+    resp_demo = client.get("/api/demo")
+    assert resp_demo.status_code == 200
+    data_demo = resp_demo.get_json()
+    assert "disclaimer" in data_demo
+    assert "ryzyko" in data_demo["disclaimer"].lower()
+    assert "porad" in data_demo["disclaimer"].lower()  # "NIE stanowia porady inwestycyjnej"
+
+    resp_analyze = client.post("/api/analyze", json={"use_demo": True})
+    assert resp_analyze.status_code == 200
+    data_analyze = resp_analyze.get_json()
+    assert "disclaimer" in data_analyze
+    assert data_analyze["disclaimer"] == data_demo["disclaimer"]
 
 
 def test_index_serwuje_dashboard(client):

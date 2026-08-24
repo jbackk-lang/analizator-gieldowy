@@ -5,7 +5,17 @@ sygnał MA-crossover + RSI (pamięć adaptacyjna), backtest, ocena TIMDR
 (Λ–τ–ρ → R_total/E/confidence) i moduł rekomendacji SL/TP, opakowane w
 lokalne REST API (Flask) + dashboard w przeglądarce.
 
-**Status: 25/25 testów przechodzi, 7 błędów znalezionych i naprawionych.**
+**Status: 26/26 testów przechodzi, 7 błędów znalezionych i naprawionych.**
+
+## ⚠️ Uwaga o ryzyku inwestycyjnym
+
+Każda odpowiedź API zawierająca analizę/rekomendację (`/api/health`,
+`/api/demo`, `/api/analyze`) zawiera pole `"disclaimer"` z jawnym
+zastrzeżeniem: to narzędzie ma charakter informacyjny/edukacyjny, NIE
+jest poradą inwestycyjną, wyniki backtestów nie gwarantują przyszłych
+rezultatów, a inwestowanie wiąże się z ryzykiem utraty kapitału —
+wszystkie decyzje inwestycyjne podejmuje się na własne ryzyko. Patrz
+`INVESTMENT_RISK_DISCLAIMER_PL` w `api.py`.
 
 ## Uruchomienie
 
